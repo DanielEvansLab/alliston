@@ -17,6 +17,33 @@ columns(txdb)
 #genes(txdb, columns = c("GENEID", "TXSTART", "TXEND", "TXID"),
 #      filter = list(gene_id = c(1,10,100)))
 
+#return start/stop for all gene ids, then use that to annotate the GWAS results,
+#then do split/apply/combine by gene id with the GWAS results
+
+#this returns for all genes
+ghs <- as.data.frame(genes(txdb, columns = c("GENEID")), stringsAsFactors = F)
+ghs$GENEID <- as.integer(unlist(ghs$GENEID))
+
+gwas <- fread("gunzip -c ../data/GWAS/Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz")
+gwas[,gene := NA]
+
+#annotate GWAS file with gene names
+for ( i in seq_along(ghs$GENEID)){
+  mychr <- ghs$chr[i]
+  mystart <- ghs$start[i]
+  myend <- ghs$end[i]
+  mygene <- ghs$GENEID[i]
+  if( gwas[CHR == mychr][BP >= mystart & BP <= myend][, .N] > 0 ){
+    gwas[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
+  } 
+}
+
+gwas <- gwas[!is.na(gene)]
+
+gwas[, min(P.NI, na.rm = T), by = gene] # gene-based score
+
+
+
 tab <- read.csv("~/bigdata/alliston/HOBeSNP/data/serra_tables/12 TGFb_FDR 0_1.csv", header= T, stringsAsFactors=F)
 tab <- read.csv("~/bigdata/alliston/HOBeSNP/data/serra_tables/2 Common DE Aging TGFb.csv", header= T, stringsAsFactors=F)
 ghs <- genes(txdb, columns = c("GENEID"),

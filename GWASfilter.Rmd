@@ -1,33 +1,68 @@
+---
+title: "Gene-based test using summary statistics"
+author: "Dan Evans"
+date: "Last update: `r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: TRUE
+---
+
+## Load libraries
+```{r}
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(data.table)
+library(batchtools)
+```
 
+## Set variables
+```{r}
+
+pos_offset <- 150000L
+gwas_trait <- "fracture" #fracture or bmd, case-sensitive
+gwas_dir <- "../data/GWAS/"
+
+```
+
+## Overall strategy
+
+Create position annotation object for all gene ids, then use that to annotate the GWAS results.
+
+Then do split/apply/combine by gene id with the GWAS results
+
+## Using TxDb for hg19
+
+One way to extract from db is to retrieve all genes into an object, then subset the object by gene id
+
+`txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene`
+`ghs <- genes(txdb)`
+
+extract 1 gene
+
+`ghs[ghs$gene_id == 1,]`
+
+extract multiple genes
+
+`ghs[ghs$gene_id %in% c(1,10,100),]`
+
+
+## Create position annotation object
+
+Create object with hg19 chr and positions for all genes
+
+```{r, cache = TRUE}
 txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
-#one way to extract from db is to retrieve all genes into an object, then 
-#subset the object by gene id
-#ghs <- genes(txdb)
-#extract 1 gene
-#ghs[ghs$gene_id == 1,]
-#extract multiple genes
-#ghs[ghs$gene_id %in% c(1,10,100),]
 
-#list available meta columns
-columns(txdb)
-#the other way is to select columns and row filters from the gene function
-#genes(txdb, columns = c("GENEID", "TXSTART", "TXEND", "TXID"),
-#      filter = list(gene_id = c(1,10,100)))
-
-#return start/stop for all gene ids, then use that to annotate the GWAS results,
-#then do split/apply/combine by gene id with the GWAS results
-
-#this returns for all genes
+#columns(txdb) #list available meta columns
+#query returns all genes
 ghs <- as.data.frame(genes(txdb, columns = c("GENEID")), stringsAsFactors = F)
 ghs$GENEID <- as.integer(unlist(ghs$GENEID))
 
-#start is always smaller than end
-sum(ghs$start > ghs$end)
-ghs$start <- ghs$start - 150000L
-ghs$end <- ghs$end + 150000L
+#check whether start is always smaller than end, as it should be
+if (sum(ghs$start > ghs$end) == 0) print("Start is smaller than end") 
+ghs$start <- ghs$start - pos_offset
+ghs$end <- ghs$end + pos_offset
 ghs$chr <- as.character(ghs$seqnames)
+#remove genes not annotated to chromosomes
 ghs$chr[grep(".*_.*", ghs$chr)] <- NA
 ghs$chr <- gsub("chr", "", ghs$chr)
 ghs$chr[ghs$chr %in% c("X")] <- 23
@@ -35,23 +70,52 @@ ghs$chr[ghs$chr %in% c("Y")] <- 24
 ghs$chr <- as.integer(ghs$chr)
 ghs <- ghs[!is.na(ghs$chr),]
 
-gwas <- fread("gunzip -c ../data/GWAS/Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz")
+```
+
+
+## Annotate GWAS results with genes based on positions
+
+```{r, message = FALSE, cache = TRUE}
+
+if (gwas_trait == "fracture") {
+  gwas_file <- "Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz"
+} else {
+  gwas_file <- "Biobank2-British-Bmd-As-C-Gwas-SumStats.txt.gz"
+}
+
+gwas <- fread(paste0("gunzip -c ", gwas_dir, gwas_file )
 gwas[,gene := -99]
 
-#annotate GWAS file with gene names
-#need to parallelize this
-for ( i in seq_along(ghs$GENEID)){
-  mychr <- ghs$chr[i]
-  mystart <- ghs$start[i]
-  myend <- ghs$end[i]
-  mygene <- ghs$GENEID[i]
-  if( gwas[CHR == mychr][BP >= mystart & BP <= myend][, .N] > 0 ){
-    gwas[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
-  } 
-  if (i %% 1000 == 0) print(i)
+#create iterator for parallel
+chunk_size <- 100
+if(length(ghs$GENEID) %% chunk_size != 0){
+  start_index <- seq(from = 1, to = length(ghs$GENEID), by = chunk_size)
+  stop_index <- start_index + chunk_size - 1 
+} else {
+  start_index <- seq(from = 1, to = length(ghs$GENEID), by = chunk_size)
+  stop_index <- start_index + chunk_size - 1 
+  stop_index[length(stop_index)] <- length(ghs$GENEID)
+}
+
+iter_index <- seq_along(start_index)
+
+#annotate GWAS file with gene names in parallel
+annotate_gene_pos <- function(iter_index){
+
+  for ( i in seq_along(ghs$GENEID)){
+    mychr <- ghs$chr[i]
+    mystart <- ghs$start[i]
+    myend <- ghs$end[i]
+    mygene <- ghs$GENEID[i]
+    if( gwas[CHR == mychr][BP >= mystart & BP <= myend][, .N] > 0 ){
+      gwas[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
+    } 
 }
 
 gwas <- gwas[gene != -99]
+
+
+}
 
 gwas[, mean(P.I, na.rm = T), by = gene] # gene-based score
 
@@ -76,17 +140,9 @@ str(ghs)
 tab <- merge(tab, ghs, by.x = "Entrez_Id", by.y = "GENEID", all.x = T)
 #gene id 199 is on chr 6, but it is absent from annotation file. I'll try a few other files later.
 
-#start is always smaller than end
-sum(ghs$start > ghs$end)
-ghs$start <- ghs$start - 150000L
-ghs$end <- ghs$end + 150000L
-ghs$chr <- as.character(ghs$seqnames)
-ghs$chr <- gsub("chr", "", ghs$chr)
-ghs$chr[ghs$chr == "X"] <- "23"
-ghs$chr <- as.integer(ghs$chr)
 
 gwas <- fread("gunzip -c ../data/GWAS/Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz")
-gwas <- fread("gunzip -c ../data/GWAS/Biobank2-British-Bmd-As-C-Gwas-SumStats.txt.gz")
+gwas <- fread("gunzip -c ../data/GWAS/)
 result <- vector(mode = "list", length = length(ghs$GENEID))
 
 #select most significant SNP from each gene region

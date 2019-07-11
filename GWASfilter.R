@@ -1,4 +1,3 @@
-library(org.Hs.eg.db)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(data.table)
 
@@ -24,10 +23,23 @@ columns(txdb)
 ghs <- as.data.frame(genes(txdb, columns = c("GENEID")), stringsAsFactors = F)
 ghs$GENEID <- as.integer(unlist(ghs$GENEID))
 
+#start is always smaller than end
+sum(ghs$start > ghs$end)
+ghs$start <- ghs$start - 150000L
+ghs$end <- ghs$end + 150000L
+ghs$chr <- as.character(ghs$seqnames)
+ghs$chr[grep(".*_.*", ghs$chr)] <- NA
+ghs$chr <- gsub("chr", "", ghs$chr)
+ghs$chr[ghs$chr %in% c("X")] <- 23
+ghs$chr[ghs$chr %in% c("Y")] <- 24
+ghs$chr <- as.integer(ghs$chr)
+ghs <- ghs[!is.na(ghs$chr),]
+
 gwas <- fread("gunzip -c ../data/GWAS/Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz")
-gwas[,gene := NA]
+gwas[,gene := -99]
 
 #annotate GWAS file with gene names
+#need to parallelize this
 for ( i in seq_along(ghs$GENEID)){
   mychr <- ghs$chr[i]
   mystart <- ghs$start[i]
@@ -36,11 +48,12 @@ for ( i in seq_along(ghs$GENEID)){
   if( gwas[CHR == mychr][BP >= mystart & BP <= myend][, .N] > 0 ){
     gwas[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
   } 
+  if (i %% 1000 == 0) print(i)
 }
 
-gwas <- gwas[!is.na(gene)]
+gwas <- gwas[gene != -99]
 
-gwas[, min(P.NI, na.rm = T), by = gene] # gene-based score
+gwas[, mean(P.I, na.rm = T), by = gene] # gene-based score
 
 
 

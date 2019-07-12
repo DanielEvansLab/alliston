@@ -20,6 +20,7 @@ library(batchtools)
 pos_offset <- 150000L
 gwas_trait <- "fracture" #fracture or bmd, case-sensitive
 gwas_dir <- "../data/GWAS/"
+output_dir <- "../results/fraxGWAS/"
 
 ```
 
@@ -83,7 +84,7 @@ if (gwas_trait == "fracture") {
   gwas_file <- "Biobank2-British-Bmd-As-C-Gwas-SumStats.txt.gz"
 }
 
-gwas <- fread(paste0("gunzip -c ", gwas_dir, gwas_file )
+gwas <- fread(paste0("gunzip -c ", gwas_dir, gwas_file ))
 gwas[,gene := -99]
 
 #create iterator for parallel
@@ -101,29 +102,30 @@ myindex <- seq_along(start_index)
 
 #annotate GWAS file with gene names in parallel
 annotate_gene_pos <- function(iter_index){
-
+  library(data.table)
   for ( i in seq(from = start_index[iter_index], to = stop_index[iter_index], by = 1)){
     mychr <- ghs$chr[i]
     mystart <- ghs$start[i]
     myend <- ghs$end[i]
     mygene <- ghs$GENEID[i]
     if( gwas[CHR == mychr][BP >= mystart & BP <= myend][, .N] > 0 ){
-      gwas[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
+      gwas_sub <- gwas[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
     } 
   }
-  gwas <- gwas[gene != -99]
+  gwas_sub <- gwas_sub[gene != -99]
+  fwrite(gwas_sub, file = paste0(output_dir, "gwas", iter_index, ".csv"))
 }
 
 
 reg <- makeRegistry(file.dir = "myregdir", conf.file = "~/.batchtools.conf.R")
-jobs <- iter_index
+jobs <- myindex
 ids <- batchMap(fun = annotate_gene_pos, iter_index = myindex)
 batchExport(export = list(ghs = ghs, start_index = start_index, 
-			  stop_index = stop_index, gwas = gwas))
+			  stop_index = stop_index, gwas = gwas, output_dir = output_dir))
 done <- submitJobs(ids, reg = reg, resources = list(partition = "batch", walltime = 180, ntasks = 1, ncpus = 1, memory = 10240))
 waitForJobs()
 getStatus()
-lapply(iter_index, loadResult)
+res <- lapply(myindex, loadResult)
 reduceResults(rbind)
 clearRegistry()
 removeRegistry(wait = 0, reg = reg)

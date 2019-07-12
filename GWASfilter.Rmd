@@ -125,11 +125,13 @@ batchExport(export = list(ghs = ghs, start_index = start_index,
 done <- submitJobs(ids, reg = reg, resources = list(partition = "batch", walltime = 180, ntasks = 1, ncpus = 1, memory = 10240))
 waitForJobs()
 getStatus()
-res <- lapply(myindex, loadResult)
-reduceResults(rbind)
 clearRegistry()
 removeRegistry(wait = 0, reg = reg)
 
+#concatenate annotated GWAS chunks
+all.files <- list.files(path = output_dir, pattern = ".csv")
+l <- lapply(all.files, fread)
+gwas <- rbindlist(l)
 
 ```
 

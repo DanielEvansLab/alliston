@@ -75,7 +75,7 @@ ghs <- ghs[!is.na(ghs$chr),]
 
 ## Annotate GWAS results with genes based on positions
 
-```{r, message = FALSE, cache = TRUE}
+```{r, cache = TRUE}
 
 if (gwas_trait == "fracture") {
   gwas_file <- "Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz"
@@ -97,12 +97,12 @@ if(length(ghs$GENEID) %% chunk_size != 0){
   stop_index[length(stop_index)] <- length(ghs$GENEID)
 }
 
-iter_index <- seq_along(start_index)
+myindex <- seq_along(start_index)
 
 #annotate GWAS file with gene names in parallel
 annotate_gene_pos <- function(iter_index){
 
-  for ( i in seq_along(ghs$GENEID)){
+  for ( i in seq(from = start_index[iter_index], to = stop_index[iter_index], by = 1)){
     mychr <- ghs$chr[i]
     mystart <- ghs$start[i]
     myend <- ghs$end[i]
@@ -110,13 +110,31 @@ annotate_gene_pos <- function(iter_index){
     if( gwas[CHR == mychr][BP >= mystart & BP <= myend][, .N] > 0 ){
       gwas[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
     } 
+  }
+  gwas <- gwas[gene != -99]
 }
 
-gwas <- gwas[gene != -99]
+
+reg <- makeRegistry(file.dir = "myregdir", conf.file = "~/.batchtools.conf.R")
+jobs <- iter_index
+ids <- batchMap(fun = annotate_gene_pos, iter_index = myindex)
+batchExport(export = list(ghs = ghs, start_index = start_index, 
+			  stop_index = stop_index, gwas = gwas))
+done <- submitJobs(ids, reg = reg, resources = list(partition = "batch", walltime = 180, ntasks = 1, ncpus = 1, memory = 10240))
+waitForJobs()
+getStatus()
+lapply(iter_index, loadResult)
+reduceResults(rbind)
+clearRegistry()
+removeRegistry(wait = 0, reg = reg)
 
 
-}
+```
 
+
+## Merge with tables
+
+```{r, eval = FALSE}
 gwas[, mean(P.I, na.rm = T), by = gene] # gene-based score
 
 
@@ -142,7 +160,7 @@ tab <- merge(tab, ghs, by.x = "Entrez_Id", by.y = "GENEID", all.x = T)
 
 
 gwas <- fread("gunzip -c ../data/GWAS/Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz")
-gwas <- fread("gunzip -c ../data/GWAS/)
+gwas <- fread("gunzip -c ../data/GWAS/")
 result <- vector(mode = "list", length = length(ghs$GENEID))
 
 #select most significant SNP from each gene region
@@ -166,7 +184,7 @@ ghs <- as.data.table(ghs)
 result2 <- cbind(ghs, result2)
 fwrite(result2, file = "../results/table12_GWAS_BMD.csv", na = "NA")
 
-
+```
 
 
 

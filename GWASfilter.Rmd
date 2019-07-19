@@ -7,12 +7,17 @@ output:
     toc: TRUE
 ---
 
+```{r, setup}
+knitr::opts_chunk$set(cache.lazy = FALSE)
+```
+
 ## Load libraries
 ```{r}
 library(org.Hs.eg.db)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(data.table)
 library(batchtools)
+library(qqman)
 ```
 
 ## Set variables
@@ -75,19 +80,33 @@ ghs <- ghs[!is.na(ghs$chr),]
 ```
 
 
-## Annotate GWAS results with genes based on positions
+## Read in GWAS results and create QQ plot
 
 ```{r, cache = TRUE}
 
 if (gwas_trait == "fracture") {
   gwas_file <- "Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz"
+  gwas <- fread(paste0("gunzip -c ", gwas_dir, gwas_file ))
+  gwas[,gene := -99]
+  qq(gwas[, P.I], main = "QQ plot fracture")
+  mychi <- qchisq(gwas[!is.na(P.I),P.I], 1, lower.tail = FALSE)
+  mylambda <- median(mychi, na.rm = T)/qchisq(0.5, 1)
+  print(paste0("Lambda = ", mylambda))
 } else {
   gwas_file <- "Biobank2-British-Bmd-As-C-Gwas-SumStats.txt.gz"
+  gwas <- fread(paste0("gunzip -c ", gwas_dir, gwas_file ))
+  gwas[,gene := -99]
+  qq(gwas[, P.NI], main = "QQ plot eBMD")
+  mychi <- qchisq(gwas[!is.na(P.NI),P.NI], 1, lower.tail = FALSE)
+  mylambda <- median(mychi, na.rm = T)/qchisq(0.5, 1)
+  print(paste0("Lambda = ", mylambda))
 }
 
-gwas <- fread(paste0("gunzip -c ", gwas_dir, gwas_file ))
-gwas[,gene := -99]
+```
 
+## Annotate GWAS results with genes based on positions
+
+```{r, cache = TRUE}
 #create iterator for parallel
 chunk_size <- 100
 if(length(ghs$GENEID) %% chunk_size != 0){

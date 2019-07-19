@@ -1,4 +1,5 @@
 .Rhistory
 myregdir/
 GWASfilter_cache/
+GWASfilter_files/
 *.out

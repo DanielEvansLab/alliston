@@ -23,7 +23,7 @@ library(qqman)
 ## Set variables
 ```{r}
 
-pos_offset <- 150000L
+pos_offset <- 50000L
 gwas_trait <- "fracture" #fracture or bmd, case-sensitive
 gwas_dir <- "../data/GWAS/"
 output_dir <- "../results/fraxGWAS/"
@@ -56,7 +56,7 @@ extract multiple genes
 
 Create object with hg19 chr and positions for all genes
 
-```{r, cache = TRUE}
+```{r}
 txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
 
 #columns(txdb) #list available meta columns
@@ -82,7 +82,7 @@ ghs <- ghs[!is.na(ghs$chr),]
 
 ## Read in GWAS results and create QQ plot
 
-```{r, cache = TRUE}
+```{r}
 
 if (gwas_trait == "fracture") {
   gwas_file <- "Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz"
@@ -106,7 +106,8 @@ if (gwas_trait == "fracture") {
 
 ## Annotate GWAS results with genes based on positions
 
-```{r, cache = TRUE}
+This code runs in parallel. Below this is code that I set not to evaluate but can run in serial on a laptop.
+```{r}
 #create iterator for parallel
 chunk_size <- 100
 if(length(ghs$GENEID) %% chunk_size != 0){
@@ -124,12 +125,13 @@ myindex <- seq_along(start_index)
 annotate_gene_pos <- function(iter_index){
   library(data.table)
   for ( i in seq(from = start_index[iter_index], to = stop_index[iter_index], by = 1)){
+    gwas_sub <- gwas
     mychr <- ghs$chr[i]
     mystart <- ghs$start[i]
     myend <- ghs$end[i]
     mygene <- ghs$GENEID[i]
-    if( gwas[CHR == mychr][BP >= mystart & BP <= myend][, .N] > 0 ){
-      gwas_sub <- gwas[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
+    if( gwas_sub[CHR == mychr][BP >= mystart & BP <= myend][, .N] > 0 ){
+      gwas_sub[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
     } 
   }
   gwas_sub <- gwas_sub[gene != -99]
@@ -150,6 +152,46 @@ removeRegistry(wait = 0, reg = reg)
 
 
 ```
+
+Code to run in serial
+
+```{r, eval = FALSE}
+#create iterator for serial
+chunk_size <- 100
+if(length(ghs$GENEID) %% chunk_size != 0){
+  start_index <- seq(from = 1, to = length(ghs$GENEID), by = chunk_size)
+  stop_index <- start_index + chunk_size - 1 
+} else {
+  start_index <- seq(from = 1, to = length(ghs$GENEID), by = chunk_size)
+  stop_index <- start_index + chunk_size - 1 
+  stop_index[length(stop_index)] <- length(ghs$GENEID)
+}
+
+myindex <- seq_along(start_index)
+
+#annotate GWAS file with gene names in parallel
+annotate_gene_pos <- function(iter_index){
+  library(data.table)
+  for ( i in seq(from = start_index[iter_index], to = stop_index[iter_index], by = 1)){
+    gwas_sub <- gwas
+    mychr <- ghs$chr[i]
+    mystart <- ghs$start[i]
+    myend <- ghs$end[i]
+    mygene <- ghs$GENEID[i]
+    if( gwas_sub[CHR == mychr][BP >= mystart & BP <= myend][, .N] > 0 ){
+      gwas_sub[CHR == mychr & BP >= mystart & BP <= myend, gene := mygene]
+    } 
+  }
+  gwas_sub <- gwas_sub[gene != -99]
+  fwrite(gwas_sub, file = paste0(output_dir, "gwas", iter_index, ".csv"))
+  return(iter_index)
+}
+
+result <- vapply(myindex, annotate_gene_pos, integer(1))
+
+
+```
+
 
 ## Gene-based scores
 

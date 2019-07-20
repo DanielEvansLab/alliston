@@ -56,7 +56,7 @@ extract multiple genes
 
 Create object with hg19 chr and positions for all genes
 
-```{r}
+```{r, cache = TRUE}
 txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
 
 #columns(txdb) #list available meta columns
@@ -82,7 +82,7 @@ ghs <- ghs[!is.na(ghs$chr),]
 
 ## Read in GWAS results and create QQ plot
 
-```{r}
+```{r, cache = TRUE}
 
 if (gwas_trait == "fracture") {
   gwas_file <- "Biobank2-British-FracA-As-C-Gwas-SumStats.txt.gz"
@@ -106,8 +106,8 @@ if (gwas_trait == "fracture") {
 
 ## Annotate GWAS results with genes based on positions
 
-This code runs in parallel. Below this is code that I set not to evaluate but can run in serial on a laptop.
-```{r}
+This code runs in parallel. Below this parallel code is some code that I set not to evaluate but can run in serial on a laptop.
+```{r, cache = TRUE}
 #create iterator for parallel
 chunk_size <- 100
 if(length(ghs$GENEID) %% chunk_size != 0){
@@ -197,7 +197,7 @@ result <- vapply(myindex, annotate_gene_pos, integer(1))
 
 Split-apply-combine using data.table by grouping. Do this for each of the chunks to minimize IO strain.
 
-```{r}
+```{r, cache = TRUE}
 library(data.table)
 #read chunks of annotated GWAS into a list of DTs
 all.files <- list.files(path = output_dir, pattern = "gwas")
@@ -216,9 +216,9 @@ gwas_gene <- rbindlist(gwas_gene)
 
 ## Merge gene-based scores with gene lists
 
-```{r}
+```{r, cache = TRUE}
 
-tab <- fread("~/bigdata/alliston/HOBeSNP/data/serra_tables/12 TGFb_FDR 0_1.csv")
+tab <- fread("~/bigdata/alliston/HOBeSNP/data/serra_tables/6_TGFb_FDR 0_1.csv")
 #tab <- fread("~/bigdata/alliston/HOBeSNP/data/serra_tables/2 Common DE Aging TGFb.csv")
 #tab$Entrez_Id merges perfectly with the geneid used in txDB and the gene-based scores object
 #get gene symbols
@@ -228,7 +228,7 @@ geneids$gene_id <- as.integer(geneids$gene_id)
 tab_gene <- merge(tab, gwas_gene, by.x = "Entrez_Id", by.y = "gene")
 tab_gene <- merge(tab_gene, geneids, by.x = "Entrez_Id", by.y = "gene_id")
 
-fwrite(tab_gene, file = "../results/table12_GWAS_frac.csv", na = "NA")
+fwrite(tab_gene, file = "../results/dan_table6_GWAS_frac.csv", na = "NA")
 
 #there are 343 genes in Serra's table, but only 334 in annotation database
 #how many Serra table genes are not found in annotation database?

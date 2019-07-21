@@ -376,7 +376,7 @@ $(document).ready(function () {
 
 <h1 class="title toc-ignore">Gene-based test using summary statistics</h1>
 <h4 class="author">Dan Evans</h4>
-<h4 class="date">Last update: 13 July, 2019</h4>
+<h4 class="date">Last update: 20 July, 2019</h4>
 
 </div>
 
@@ -462,7 +462,7 @@ library(qqman)</code></pre>
 </div>
 <div id="set-variables" class="section level2">
 <h2>Set variables</h2>
-<pre class="r"><code>pos_offset &lt;- 150000L
+<pre class="r"><code>pos_offset &lt;- 50000L
 gwas_trait &lt;- &quot;fracture&quot; #fracture or bmd, case-sensitive
 gwas_dir &lt;- &quot;../data/GWAS/&quot;
 output_dir &lt;- &quot;../results/fraxGWAS/&quot;</code></pre>
@@ -529,6 +529,7 @@ ghs &lt;- ghs[!is.na(ghs$chr),]</code></pre>
 </div>
 <div id="annotate-gwas-results-with-genes-based-on-positions" class="section level2">
 <h2>Annotate GWAS results with genes based on positions</h2>
+<p>This code runs in parallel. Below this parallel code is some code that I set not to evaluate but can run in serial on a laptop.</p>
 <pre class="r"><code>#create iterator for parallel
 chunk_size &lt;- 100
 if(length(ghs$GENEID) %% chunk_size != 0){
@@ -546,12 +547,13 @@ myindex &lt;- seq_along(start_index)
 annotate_gene_pos &lt;- function(iter_index){
   library(data.table)
   for ( i in seq(from = start_index[iter_index], to = stop_index[iter_index], by = 1)){
+    gwas_sub &lt;- gwas
     mychr &lt;- ghs$chr[i]
     mystart &lt;- ghs$start[i]
     myend &lt;- ghs$end[i]
     mygene &lt;- ghs$GENEID[i]
-    if( gwas[CHR == mychr][BP &gt;= mystart &amp; BP &lt;= myend][, .N] &gt; 0 ){
-      gwas_sub &lt;- gwas[CHR == mychr &amp; BP &gt;= mystart &amp; BP &lt;= myend, gene := mygene]
+    if( gwas_sub[CHR == mychr][BP &gt;= mystart &amp; BP &lt;= myend][, .N] &gt; 0 ){
+      gwas_sub[CHR == mychr &amp; BP &gt;= mystart &amp; BP &lt;= myend, gene := mygene]
     } 
   }
   gwas_sub &lt;- gwas_sub[gene != -99]
@@ -573,7 +575,7 @@ ids &lt;- batchMap(fun = annotate_gene_pos, iter_index = myindex)</code></pre>
 <pre class="r"><code>waitForJobs()</code></pre>
 <pre><code>## [1] TRUE</code></pre>
 <pre class="r"><code>getStatus()</code></pre>
-<pre><code>## Status for 231 jobs at 2019-07-13 11:08:20:
+<pre><code>## Status for 231 jobs at 2019-07-20 10:34:16:
 ##   Submitted    : 231 (100.0%)
 ##   -- Queued    :   0 (  0.0%)
 ##   -- Started   : 231 (100.0%)
@@ -590,6 +592,39 @@ ids &lt;- batchMap(fun = annotate_gene_pos, iter_index = myindex)</code></pre>
 <pre class="r"><code>removeRegistry(wait = 0, reg = reg)</code></pre>
 <pre><code>## Unsetting registry as default</code></pre>
 <pre><code>## Recursively removing files in '/bigdata/evanslab/devans/alliston/HOBeSNP/R/myregdir' ...</code></pre>
+<p>Code to run in serial</p>
+<pre class="r"><code>#create iterator for serial
+chunk_size &lt;- 100
+if(length(ghs$GENEID) %% chunk_size != 0){
+  start_index &lt;- seq(from = 1, to = length(ghs$GENEID), by = chunk_size)
+  stop_index &lt;- start_index + chunk_size - 1 
+} else {
+  start_index &lt;- seq(from = 1, to = length(ghs$GENEID), by = chunk_size)
+  stop_index &lt;- start_index + chunk_size - 1 
+  stop_index[length(stop_index)] &lt;- length(ghs$GENEID)
+}
+
+myindex &lt;- seq_along(start_index)
+
+#annotate GWAS file with gene names in parallel
+annotate_gene_pos &lt;- function(iter_index){
+  library(data.table)
+  for ( i in seq(from = start_index[iter_index], to = stop_index[iter_index], by = 1)){
+    gwas_sub &lt;- gwas
+    mychr &lt;- ghs$chr[i]
+    mystart &lt;- ghs$start[i]
+    myend &lt;- ghs$end[i]
+    mygene &lt;- ghs$GENEID[i]
+    if( gwas_sub[CHR == mychr][BP &gt;= mystart &amp; BP &lt;= myend][, .N] &gt; 0 ){
+      gwas_sub[CHR == mychr &amp; BP &gt;= mystart &amp; BP &lt;= myend, gene := mygene]
+    } 
+  }
+  gwas_sub &lt;- gwas_sub[gene != -99]
+  fwrite(gwas_sub, file = paste0(output_dir, &quot;gwas&quot;, iter_index, &quot;.csv&quot;))
+  return(iter_index)
+}
+
+result &lt;- vapply(myindex, annotate_gene_pos, integer(1))</code></pre>
 </div>
 <div id="gene-based-scores" class="section level2">
 <h2>Gene-based scores</h2>
@@ -610,7 +645,7 @@ gwas_gene &lt;- rbindlist(gwas_gene)</code></pre>
 </div>
 <div id="merge-gene-based-scores-with-gene-lists" class="section level2">
 <h2>Merge gene-based scores with gene lists</h2>
-<pre class="r"><code>tab &lt;- fread(&quot;~/bigdata/alliston/HOBeSNP/data/serra_tables/12 TGFb_FDR 0_1.csv&quot;)
+<pre class="r"><code>tab &lt;- fread(&quot;~/bigdata/alliston/HOBeSNP/data/serra_tables/6_TGFb_FDR_0_1.csv&quot;)
 #tab &lt;- fread(&quot;~/bigdata/alliston/HOBeSNP/data/serra_tables/2 Common DE Aging TGFb.csv&quot;)
 #tab$Entrez_Id merges perfectly with the geneid used in txDB and the gene-based scores object
 #get gene symbols
@@ -620,7 +655,7 @@ geneids$gene_id &lt;- as.integer(geneids$gene_id)
 tab_gene &lt;- merge(tab, gwas_gene, by.x = &quot;Entrez_Id&quot;, by.y = &quot;gene&quot;)
 tab_gene &lt;- merge(tab_gene, geneids, by.x = &quot;Entrez_Id&quot;, by.y = &quot;gene_id&quot;)
 
-fwrite(tab_gene, file = &quot;../results/table12_GWAS_frac.csv&quot;, na = &quot;NA&quot;)
+fwrite(tab_gene, file = &quot;../results/dan_table6_GWAS_frac.csv&quot;, na = &quot;NA&quot;)
 
 #there are 343 genes in Serra's table, but only 334 in annotation database
 #how many Serra table genes are not found in annotation database?
@@ -633,20 +668,20 @@ case_all &lt;- gwas_gene[minG &lt;= 0.0001, .N]
 control_all &lt;- gwas_gene[minG &gt; 0.0001, .N]
 rbind(c(case_obs, control_obs), c(case_all, control_all)) </code></pre>
 <pre><code>##      [,1]  [,2]
-## [1,]   49   280
+## [1,]   49   283
 ## [2,] 2950 19637</code></pre>
 <pre class="r"><code>fisher.test( rbind(c(case_obs, control_obs), c(case_all, control_all)) )</code></pre>
 <pre><code>## 
 ##  Fisher's Exact Test for Count Data
 ## 
 ## data:  rbind(c(case_obs, control_obs), c(case_all, control_all))
-## p-value = 0.3232
+## p-value = 0.3669
 ## alternative hypothesis: true odds ratio is not equal to 1
 ## 95 percent confidence interval:
-##  0.839631 1.586975
+##  0.8309465 1.5696972
 ## sample estimates:
 ## odds ratio 
-##    1.16488</code></pre>
+##   1.152528</code></pre>
 </div>
 
 

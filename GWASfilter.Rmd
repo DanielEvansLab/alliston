@@ -218,7 +218,7 @@ gwas_gene <- rbindlist(gwas_gene)
 
 ```{r, cache = TRUE}
 
-tab <- fread("~/bigdata/alliston/HOBeSNP/data/serra_tables/6_TGFb_FDR 0_1.csv")
+tab <- fread("~/bigdata/alliston/HOBeSNP/data/serra_tables/6_TGFb_FDR_0_1.csv")
 #tab <- fread("~/bigdata/alliston/HOBeSNP/data/serra_tables/2 Common DE Aging TGFb.csv")
 #tab$Entrez_Id merges perfectly with the geneid used in txDB and the gene-based scores object
 #get gene symbols
